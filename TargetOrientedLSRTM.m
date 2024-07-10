@@ -25,13 +25,13 @@ opt.srctype     = 1; % source type, 0 = monopole, 1 = dipole
 opt.rectype     = 0; % receiver type,  0 = monopole, 1 = dipole
 CG = 1;               % CG = 1 is Conjugate-Gradient algorithme otherwsie Steepest decent
 
-% define chapters
+% define chapters, 1 means the chapter is active
 chapters = zeros(10,1);
 chapters(1) = 1; % initialization
 chapters(2) = 1; % 1 = loading data
 chapters(3) = 1; % double focusing and making PSF
 chapters(4) = 1; % make input list
-chapters(5) = 1; % Green's function
+chapters(5) = 1; % Green's function for migration with Born approximation of Lipmann-Schwinger integral
 chapters(6) = 1; % LSM
 chapters(7) = 1; % save data
 
@@ -51,8 +51,8 @@ nx1 = 6401;                 % original full model's number of lateral sampels
 nxtar1 = 961;               % original target's number of latral sampels
 dx1 = 3.125;                % original spatial sampling rate in m
 nztar1 =  focusingdepthb/dx1 - focusingdeptha/dx1 +1;  % original target's number of depth sampels
-dxmodel = 5;
-mratio = dxmodel/dx1;
+dxmodel = 5;                                           % Reduced spatial sampling rate
+mratio = dxmodel/dx1;                                  % Ratio of original and reduced spatial sampling rate
 nz = ceil(nz1/mratio);                                 % Reduced full model's number of depth sampels
 nx = ceil(nx1/mratio);                                 % Reduced full model's number of lateral sampels
 input.dx = dxmodel;
@@ -66,7 +66,7 @@ x2 = (0:nztar-1)*dxmodel + focusingdeptha;
 
 % define your receiver geometry
  NR = 399;                  % number of receivers
- zR = 0;                    % location in x_2
+ zR = 0;                    % Depth of receivers
  dxR = 25;                  % receiver spacing
  xR = zeros(2,NR);
  xR(1,1:NR) = (0:NR-1)*dxR;
@@ -74,7 +74,7 @@ x2 = (0:nztar-1)*dxmodel + focusingdeptha;
  
 % define your source geometry  
  NS = 399;                  % number of sources
- zS = 0;                    % location in x_2
+ zS = 0;                    % Depth of sources
  dxS = 25;                  % source spacing
  xS = zeros(2,NS);
  xS(1,1:NR) = (0:NR-1)*dxR;
@@ -104,7 +104,7 @@ pad=0;
 end
 
 %% loading
-if chapters(2) == 1  % Load your own model and wavelet. the loading and reading functions and paths are just an example here.
+if chapters(2) == 1  % Load your model and wavelet. The loading and reading functions and paths are just an example here.
     
     disp('Modle and temporal parameters')
     
@@ -169,7 +169,8 @@ disp('2. loading');
 
 [Gplus,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Marchenko/gplus/gplus_tot_2100.su','cwp'); % Marchenko downgoing Green's function at targets upper boundary
 Gplus = reshape(cell2mat(Gplus),nt,NS,NFocus);
-Gplus = permute(Gplus,[1 3 2]);
+Gplus = permute(Gplus,[1 3 2]); % Sources ay surface should be the third dimension,
+                                % and the focusing points should be in the second dimension, so I used the permute function.
 Gplus = Gplus(:,1:end-1,:);
 
 [Gmin,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Marchenko/gmin/gmin_tot_2100.su','cwp');    % Marchenko upgoing Green's function at targets upper boundary
@@ -182,13 +183,13 @@ end
 %% Duoble focusing
 disp('Duoble focusing')
 NR_surf = 399;
-[Gd,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Trans_mono/Trans_direct.su','cwp');     % Direct arrival from surface to the target boundary
+[Gd,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Trans_mono/Trans_direct.su','cwp');  % Direct arrival from surface to the target boundary
 Gd = reshape(cell2mat(Gd),nt,[],NFocus);
 
 [f1p,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Marchenko/f1plus/f1plus_tot1.su','cwp'); % Marchenko downgoing focusing function
 f1p = reshape(cell2mat(f1p),nt,NS,NFocus);
 f1p = permute(f1p,[1 3 2]);
-Gd = Gd(:,:,1:end-1);
+Gd = Gd(:,:,1:end-1);  % I had an extra focusing point, hence the -1 one. You may not need it.
 f1p = f1p(:,1:end-1,:);
 
 %% double focusing and making PSF
@@ -205,7 +206,7 @@ for i = 1:NFocus-1
     Gammafk = fft2(squeeze(Gamma_r(:,:,i)))./m(:,i);
     Gamma_r(:,:,i) = real(ifft(ifft(Gammafk,[],2),[],1));
 end
-Gamma_r = [Gamma_r(1:128,:,:);Gamma_r(1875:end,:,:)];
+Gamma_r = [Gamma_r(1:128,:,:);Gamma_r(1875:end,:,:)]; % Removing zeros from the middle of the gathers to reduce the number of the time sample.
 
 % Virtual source computation
 Source = squeeze(Gpf1p(:,:,:));
@@ -272,13 +273,13 @@ if chapters(5) == 1
     disp(['5. Green function']);
     tic
     
-        % Load Green's function of the entire target computed by Finite difference algorithm
+        % Load Green's function of the entire target computed by the Finite difference algorithm
 
         [Gsu,~] = ReadSumax('/scratch/ashoja/TargetEnclosed/SAGA_deep_2100_2600/Green_tar/Green_tar_0.su','cwp');
         Gsu = reshape(cell2mat(Gsu),256,nxtar*(nztar),NFocus-1);
         size(Gsu)
         Gr = permute(Gsu,[3 2 1]);      % Source side Green's function
-        Gsu = permute(Gsu,[2 3 1]);     % Using source-receiver reciprocity to creat receiver side Green's functions
+        Gsu = permute(Gsu,[2 3 1]);     % Using source-receiver reciprocity to create receiver side Green's functions
         Gsu = (fft(Gsu,[],3))*dt;
         Gr = (fft(Gr,[],3))*dt;
         
